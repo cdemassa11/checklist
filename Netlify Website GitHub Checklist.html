@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>My Checklist</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f6f5f1;
+      --card: #ffffff;
+      --text: #1c1c1e;
+      --muted: #8a8a8e;
+      --line: #e6e4de;
+      --accent: #3b5bdb;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #121214;
+        --card: #1c1c1f;
+        --text: #f2f2f4;
+        --muted: #8e8e93;
+        --line: #2c2c30;
+        --accent: #7c95ff;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Inter", system-ui, sans-serif;
+      display: flex;
+      justify-content: center;
+      padding: 64px 16px;
+    }
+    main { width: 100%; max-width: 520px; }
+    h1 { font-size: 32px; margin: 0 0 4px; letter-spacing: -0.02em; }
+    .count { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+    form { display: flex; gap: 8px; margin-bottom: 16px; }
+    input[type="text"] {
+      flex: 1;
+      padding: 12px 14px;
+      font: inherit;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--card);
+      color: var(--text);
+      outline: none;
+    }
+    input[type="text"]:focus { border-color: var(--accent); }
+    button {
+      font: inherit;
+      cursor: pointer;
+      border: none;
+      border-radius: 10px;
+    }
+    .add {
+      padding: 0 18px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 500;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    li {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+    li:last-child { border-bottom: none; }
+    li input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+    li span { flex: 1; word-break: break-word; }
+    li.done span { text-decoration: line-through; color: var(--muted); }
+    .del {
+      background: none;
+      color: var(--muted);
+      font-size: 18px;
+      padding: 0 4px;
+      opacity: 0;
+      transition: opacity .15s;
+    }
+    li:hover .del, .del:focus { opacity: 1; }
+    @media (hover: none) { .del { opacity: 1; } }
+    .empty { color: var(--muted); text-align: center; padding: 28px; }
+    .clear {
+      margin-top: 12px;
+      background: none;
+      color: var(--muted);
+      font-size: 14px;
+      padding: 4px 0;
+    }
+    .clear:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>My Checklist</h1>
+    <p class="count" id="count"></p>
+
+    <form id="form">
+      <input type="text" id="input" placeholder="Add something to do…" autocomplete="off" />
+      <button class="add" type="submit">Add</button>
+    </form>
+
+    <ul id="list"></ul>
+    <button class="clear" id="clear">Clear completed</button>
+  </main>
+
+  <script>
+    const KEY = "my-checklist";
+    let items = [];
+    try { items = JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) {}
+
+    const list = document.getElementById("list");
+    const count = document.getElementById("count");
+
+    function save() {
+      try { localStorage.setItem(KEY, JSON.stringify(items)); } catch (e) {}
+    }
+
+    function render() {
+      list.innerHTML = "";
+      if (items.length === 0) {
+        list.innerHTML = '<li class="empty">Nothing here yet.</li>';
+      }
+      items.forEach((item, i) => {
+        const li = document.createElement("li");
+        if (item.done) li.className = "done";
+
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.checked = item.done;
+        box.onchange = () => { item.done = box.checked; save(); render(); };
+
+        const text = document.createElement("span");
+        text.textContent = item.text;
+
+        const del = document.createElement("button");
+        del.className = "del";
+        del.textContent = "×";
+        del.setAttribute("aria-label", "Delete");
+        del.onclick = () => { items.splice(i, 1); save(); render(); };
+
+        li.append(box, text, del);
+        list.appendChild(li);
+      });
+      const left = items.filter(i => !i.done).length;
+      count.textContent = `${left} of ${items.length} left`;
+    }
+
+    document.getElementById("form").onsubmit = (e) => {
+      e.preventDefault();
+      const input = document.getElementById("input");
+      const text = input.value.trim();
+      if (!text) return;
+      items.push({ text, done: false });
+      input.value = "";
+      save();
+      render();
+    };
+
+    document.getElementById("clear").onclick = () => {
+      items = items.filter(i => !i.done);
+      save();
+      render();
+    };
+
+    render();
+  </script>
+</body>
+</html>
