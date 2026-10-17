@@ -67,7 +67,8 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   height: 100%;
   overflow: hidden;
   border-radius: calc(var(--h) * 0.064);
-  background: radial-gradient(120% 80% at 50% 42%, #0f1b1f 0%, #0a1215 60%, #070c0e 100%);
+  /* matched to the Figma frame: a top-to-bottom teal-to-ink gradient */
+  background: linear-gradient(180deg, #0B1B21 0%, #0A171C 35%, #0A1518 50%, #0A1215 80%, #0A1012 100%);
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -75,9 +76,11 @@ button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px s
   isolation: isolate;
 }
 .grain {
-  position: absolute; inset: 0; pointer-events: none; z-index: 3;
-  opacity: .1;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .6 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  /* per-pixel film grain over the whole frame (blobs, text and result included) */
+  position: absolute; inset: 0; pointer-events: none; z-index: 9;
+  background-image: var(--grain, none);
+  background-size: 256px 256px;
+  mix-blend-mode: soft-light;
 }
 
 /* blobs */
@@ -304,11 +307,10 @@ select { background: var(--ink); color: var(--fg); border: 1px solid var(--line)
 
 <div class="stage">
   <div class="phone">
-    <div class="screen" id="screen" data-state="idle" data-variant="classic">
+    <div class="screen" id="screen" data-state="idle" data-variant="pulse">
       <div class="orbit-ring home-only"></div>
       <div id="blobs"></div>
       <div class="ripples home-only"><i></i><i></i><i></i></div>
-      <div class="grain"></div>
 
       <div class="logo home-only" aria-label="Logo placeholder"><span class="mark" id="mark"></span><span class="wordmark">logo</span></div>
       <div class="kicker home-only" id="kicker"></div>
@@ -327,6 +329,7 @@ select { background: var(--ink); color: var(--fg); border: 1px solid var(--line)
         </div>
       </div>
 
+      <div class="grain"></div>
       <div class="toast" id="toast"></div>
 
       <div class="status">
@@ -351,10 +354,10 @@ select { background: var(--ink); color: var(--fg); border: 1px solid var(--line)
     <div class="group">
       <span class="label">Home screen</span>
       <div class="seg" id="variantSeg" role="group" aria-label="Home screen version">
-        <button type="button" data-variant="classic" aria-pressed="true">Classic</button>
+        <button type="button" data-variant="classic" aria-pressed="false">Classic</button>
         <button type="button" data-variant="orbit" aria-pressed="false">Orbit</button>
         <button type="button" data-variant="headline" aria-pressed="false">Headline</button>
-        <button type="button" data-variant="pulse" aria-pressed="false">Pulse</button>
+        <button type="button" data-variant="pulse" aria-pressed="true">Pulse</button>
       </div>
       <div class="seg-note" id="variantNote"></div>
       <p>The five-dot mark is a stand-in for your logo.</p>
@@ -418,8 +421,23 @@ select { background: var(--ink); color: var(--fg); border: 1px solid var(--line)
   const screen = $('#screen'), layer = $('#blobs'), btn = $('#shuffleBtn'), result = $('#result'), toast = $('#toast');
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const cfg = { variant: 'classic', speed: 1, sound: true, rig: 'random' };
+  const cfg = { variant: 'pulse', speed: 1, sound: true, rig: 'random' };
   let W = 0, H = 0, SIZE = 0;
+
+  // Monochrome grain tile: grey noise centered on 50% so the soft-light blend
+  // speckles light and dark evenly without shifting the gradient underneath.
+  (function makeGrain() {
+    const dpr = Math.min(3, window.devicePixelRatio || 1), n = Math.round(256 * dpr);
+    const c = document.createElement('canvas'); c.width = c.height = n;
+    const ctx = c.getContext('2d'), img = ctx.createImageData(n, n), d = img.data;
+    for (let k = 0; k < d.length; k += 4) {
+      const g = (Math.random() + Math.random() + Math.random() - 1.5) * 2; // ~N(0, 1)
+      const v = Math.max(0, Math.min(255, 128 + g * 22));
+      d[k] = d[k + 1] = d[k + 2] = v; d[k + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    try { screen.style.setProperty('--grain', `url(${c.toDataURL('image/png')})`); } catch (e) {}
+  })();
 
   $('#kicker').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
@@ -727,7 +745,7 @@ select { background: var(--ink); color: var(--fg); border: 1px solid var(--line)
   $('#rig').addEventListener('change', (e) => { cfg.rig = e.target.value; });
   $('#resetBtn').addEventListener('click', goHome);
 
-  setVariant('classic');
+  setVariant('pulse');
   measure();
   new ResizeObserver(measure).observe(screen);
   setUI('idle');
