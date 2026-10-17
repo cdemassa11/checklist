@@ -1,0 +1,804 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Moment Shuffle</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+<style>
+/* Layout: one phone prototype centered on a dark stage, a quiet control panel beside it (stacks below on phones) */
+:root {
+  --page: #06090a;
+  --ink: #0b1316;
+  --fg: #eef3f2;
+  --muted: #8b9c9f;
+  --line: #1c272b;
+  --pill: #f6f7f4;
+  --pill-ink: #0b1316;
+  --bezel: #2b3446;
+  --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--fg);
+  font-family: var(--sans);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
+
+.stage {
+  min-height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 56px;
+  padding-block: 24px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+/* ---------- phone ---------- */
+.phone {
+  --h: min(844px, calc(100dvh - 48px));
+  height: var(--h);
+  width: calc(var(--h) * 0.462);
+  max-width: calc(100vw - 32px);
+  flex: none;
+  box-sizing: border-box;
+  padding: calc(var(--h) * 0.012);
+  border-radius: calc(var(--h) * 0.075);
+  background: linear-gradient(140deg, #4a5468, var(--bezel) 30%, #1b212c 70%, #3b4558);
+  box-shadow: 0 0 0 1px #0d1117, 0 40px 80px -30px #000;
+}
+.screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: calc(var(--h) * 0.064);
+  background: radial-gradient(120% 80% at 50% 42%, #0f1b1f 0%, #0a1215 60%, #070c0e 100%);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  container-type: size;
+  isolation: isolate;
+}
+.grain {
+  position: absolute; inset: 0; pointer-events: none; z-index: 3;
+  opacity: .1;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .6 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/* blobs */
+#blobs { position: absolute; inset: 0; z-index: 1; }
+.blob {
+  position: absolute; left: 0; top: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+.glow {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: radial-gradient(circle, var(--c) 0%, color-mix(in srgb, var(--c) 72%, transparent) 26%, transparent 66%);
+  filter: blur(calc(var(--blur, 14) * 1px));
+}
+.blob svg {
+  position: absolute; left: 50%; top: 50%;
+  width: 17%; height: 17%;
+  transform: translate(-50%, -50%);
+  fill: none; stroke: #fff; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round;
+  opacity: var(--io, 1);
+  filter: drop-shadow(0 0 6px rgba(0,0,0,.25));
+}
+.hit {
+  position: absolute; left: 30%; top: 30%; width: 40%; height: 40%;
+  border-radius: 50%;
+  pointer-events: auto;
+  cursor: grab;
+}
+.screen[data-state="shuffle"] .hit, .screen[data-state="land"] .hit, .screen[data-state="reveal"] .hit { pointer-events: none; }
+
+/* center copy */
+.center {
+  position: absolute; left: 0; right: 0; top: 44.5%;
+  height: 8cqw;
+  z-index: 4; pointer-events: none;
+  font-family: var(--serif); font-style: italic;
+  font-size: 8cqw; line-height: 1;
+  text-align: center;
+  color: #f3f5f2;
+}
+.line {
+  position: absolute; inset: 0;
+  transition: opacity .5s ease, transform .7s cubic-bezier(.2,.8,.2,1), filter .5s ease;
+}
+.line.off { opacity: 0; transform: translateY(10px); filter: blur(6px); }
+.dots span { display: inline-block; animation: dot 1.2s infinite ease-in-out; }
+.dots span:nth-child(2) { animation-delay: .15s; }
+.dots span:nth-child(3) { animation-delay: .3s; }
+@keyframes dot { 0%, 100% { opacity: .25; } 40% { opacity: 1; } }
+
+#shuffleBtn {
+  --charge: 0;
+  position: absolute; left: 50%; top: 53.5%;
+  z-index: 4;
+  transform: translateX(-50%) scale(calc(1 - var(--charge) * .08));
+  padding: 3.4cqw 7.6cqw;
+  border: 0; border-radius: 999px;
+  background: var(--pill); color: var(--pill-ink);
+  font-size: 4.6cqw; font-weight: 450; letter-spacing: .01em;
+  box-shadow: 0 0 calc(var(--charge) * 44px) calc(var(--charge) * 8px) rgba(255,255,255,.28), 0 8px 24px -10px rgba(0,0,0,.6);
+  transition: opacity .35s, filter .35s, translate .35s;
+  touch-action: none;
+}
+#shuffleBtn:active { transition: opacity .35s, filter .35s; }
+.screen:not([data-state="idle"]):not([data-state="charging"]) #shuffleBtn {
+  opacity: 0; filter: blur(6px); translate: 0 8px; pointer-events: none;
+}
+#skipBtn {
+  position: absolute; left: 50%; bottom: 9.5%;
+  transform: translateX(-50%);
+  z-index: 4;
+  border: 0; background: none; padding: 10px 16px;
+  font-size: 3.7cqw; color: rgba(255,255,255,.82);
+  opacity: 0; pointer-events: none;
+  transition: opacity .4s .3s;
+}
+.screen[data-state="shuffle"] #skipBtn { opacity: 1; pointer-events: auto; }
+
+/* reveal */
+.reveal {
+  --ox: 50%; --oy: 45%; --rc: #fff;
+  position: absolute; inset: 0; z-index: 6;
+  background: var(--ink);
+  clip-path: circle(0px at var(--ox) var(--oy));
+  transition: clip-path .8s cubic-bezier(.7,0,.2,1);
+  pointer-events: none;
+  display: flex; flex-direction: column;
+}
+.reveal.open { clip-path: circle(150% at var(--ox) var(--oy)); pointer-events: auto; }
+.rv-glow {
+  position: absolute; left: -30%; top: -22%; width: 160%; aspect-ratio: 1;
+  max-width: none;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--rc) 0%, color-mix(in srgb, var(--rc) 55%, transparent) 30%, transparent 64%);
+  filter: blur(30px);
+  opacity: .9;
+  animation: breathe 6s ease-in-out infinite;
+}
+@keyframes breathe { 50% { transform: scale(1.06) translateY(2%); opacity: .75; } }
+.rv-close {
+  position: absolute; z-index: 2;
+  top: 8%; left: 6%;
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 0; background: rgba(0,0,0,.22);
+  display: grid; place-items: center;
+}
+.rv-close svg { width: 18px; height: 18px; stroke: #fff; stroke-width: 1.8; fill: none; stroke-linecap: round; }
+.rv-body {
+  position: relative; z-index: 2;
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3.2cqw;
+  padding: 0 9%;
+  text-align: center;
+}
+.rv-icon { width: 14cqw; height: 14cqw; margin-bottom: 6cqw; }
+.rv-icon svg { width: 100%; height: 100%; fill: none; stroke: #fff; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.rv-eyebrow { margin: 0; font-size: 3.1cqw; letter-spacing: .16em; text-transform: uppercase; color: rgba(255,255,255,.7); }
+.rv-title { margin: 0; font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 11cqw; line-height: 1.02; text-wrap: balance; }
+.rv-prompt { margin: 0; font-size: 4.2cqw; line-height: 1.4; color: rgba(255,255,255,.85); text-wrap: balance; max-width: 30ch; }
+.rv-meta { margin: 2cqw 0 0; font-size: 3.2cqw; color: rgba(255,255,255,.55); font-variant-numeric: tabular-nums; }
+.rv-actions {
+  position: relative; z-index: 2;
+  display: flex; flex-direction: column; align-items: center; gap: 2cqw;
+  padding-bottom: 12%;
+}
+.pill {
+  border: 0; border-radius: 999px;
+  background: var(--pill); color: var(--pill-ink);
+  padding: 3.6cqw 9cqw; font-size: 4.4cqw; font-weight: 500;
+}
+.ghost { border: 0; background: none; padding: 10px 16px; font-size: 3.8cqw; color: rgba(255,255,255,.85); }
+.reveal .rv-body > *, .reveal .rv-actions > * { opacity: 0; transform: translateY(14px); transition: opacity .5s, transform .7s cubic-bezier(.2,.8,.2,1); }
+.reveal.open .rv-body > *, .reveal.open .rv-actions > * { opacity: 1; transform: none; }
+.reveal.open .rv-body > :nth-child(1) { transition-delay: .35s; }
+.reveal.open .rv-body > :nth-child(2) { transition-delay: .45s; }
+.reveal.open .rv-body > :nth-child(3) { transition-delay: .52s; }
+.reveal.open .rv-body > :nth-child(4) { transition-delay: .6s; }
+.reveal.open .rv-body > :nth-child(5) { transition-delay: .66s; }
+.reveal.open .rv-actions > :nth-child(1) { transition-delay: .75s; }
+.reveal.open .rv-actions > :nth-child(2) { transition-delay: .82s; }
+
+.toast {
+  position: absolute; left: 50%; bottom: 22%; z-index: 8;
+  transform: translate(-50%, 10px);
+  padding: 10px 16px; border-radius: 999px;
+  background: rgba(10,16,18,.86); color: var(--fg);
+  font-size: 3.4cqw; white-space: nowrap;
+  opacity: 0; pointer-events: none;
+  transition: opacity .3s, transform .3s;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* device chrome */
+.status {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+  height: 6.6%;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 9% 0 13%;
+  font-size: 4cqw; font-weight: 600;
+  pointer-events: none;
+}
+.status svg { height: 3.2cqw; fill: #fff; }
+.status .icons { display: flex; gap: 1.4cqw; align-items: center; }
+.island {
+  position: absolute; z-index: 11; top: 1.4%; left: 50%; transform: translateX(-50%);
+  width: 31%; height: 4.3%; border-radius: 999px; background: #000; pointer-events: none;
+}
+.homebar {
+  position: absolute; z-index: 11; bottom: 0.9%; left: 50%; transform: translateX(-50%);
+  width: 36%; height: 5px; border-radius: 999px; background: #fff; pointer-events: none;
+}
+
+/* ---------- panel ---------- */
+.panel {
+  width: 300px; max-width: 100%;
+  display: flex; flex-direction: column; gap: 28px;
+}
+.panel h1 { margin: 0 0 6px; font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 36px; line-height: 1; }
+.panel p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.group { display: flex; flex-direction: column; gap: 10px; }
+.label { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; }
+.seg button { border: 0; border-radius: 8px; padding: 9px 4px; background: none; color: var(--muted); font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--page); }
+.seg-note { font-size: 13px; color: var(--muted); min-height: 2.6em; line-height: 1.4; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; }
+input[type="range"] { flex: 1; accent-color: var(--fg); }
+.speed-val { font-variant-numeric: tabular-nums; color: var(--muted); width: 3.5ch; text-align: right; }
+select { background: var(--ink); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; font-size: 13px; }
+.tips { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; color: var(--fg); }
+.tips li { display: flex; gap: 10px; line-height: 1.4; }
+.tips li::before { content: ""; flex: none; width: 6px; height: 6px; margin-top: .5em; border-radius: 50%; background: var(--muted); }
+.switch { position: relative; width: 38px; height: 22px; flex: none; }
+.switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--line); transition: background .2s; pointer-events: none; }
+.switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); transition: transform .2s, background .2s; }
+.switch input:checked + span { background: var(--fg); }
+.switch input:checked + span::after { transform: translateX(16px); background: var(--page); }
+
+@media (max-width: 720px) {
+  .stage { flex-direction: column; gap: 0; padding: 0; }
+  .phone { --h: 100dvh; width: 100%; max-width: none; padding: 0; border-radius: 0; background: none; box-shadow: none; }
+  .screen { border-radius: 0; }
+  .status, .island, .homebar { display: none; }
+  .panel { width: auto; box-sizing: border-box; align-self: stretch; padding-block: 32px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rv-glow, .dots span { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="phone">
+    <div class="screen" id="screen" data-state="idle">
+      <div id="blobs"></div>
+      <div class="grain"></div>
+
+      <div class="center" aria-live="polite">
+        <div class="line" id="line1">capture a moment</div>
+        <div class="line off" id="line2">shuffling<span class="dots"><span>.</span><span>.</span><span>.</span></span></div>
+      </div>
+      <button id="shuffleBtn" type="button">Shuffle</button>
+      <button id="skipBtn" type="button">Skip →</button>
+
+      <div class="reveal" id="reveal" aria-hidden="true">
+        <div class="rv-glow"></div>
+        <div class="grain"></div>
+        <button class="rv-close" id="rvClose" type="button" aria-label="Back to home"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+        <div class="rv-body">
+          <div class="rv-icon" id="rvIcon"></div>
+          <p class="rv-eyebrow">your moment</p>
+          <h2 class="rv-title" id="rvTitle">record a voice memo</h2>
+          <p class="rv-prompt" id="rvPrompt"></p>
+          <p class="rv-meta" id="rvMeta"></p>
+        </div>
+        <div class="rv-actions">
+          <button class="pill" id="rvGo" type="button">Start recording</button>
+          <button class="ghost" id="rvAgain" type="button">Shuffle again ↻</button>
+        </div>
+      </div>
+
+      <div class="toast" id="toast"></div>
+
+      <div class="status">
+        <span>4:20</span>
+        <span class="icons">
+          <svg viewBox="0 0 18 12"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+          <svg viewBox="0 0 16 12"><path d="M8 2.2c2.4 0 4.6.9 6.2 2.5l1.2-1.3A10.4 10.4 0 0 0 8 .4 10.4 10.4 0 0 0 .6 3.4l1.2 1.3A8.7 8.7 0 0 1 8 2.2Zm0 3.6c1.4 0 2.7.5 3.7 1.4l1.2-1.3A7.2 7.2 0 0 0 8 4a7.2 7.2 0 0 0-4.9 1.9l1.2 1.3c1-.9 2.3-1.4 3.7-1.4Zm0 3.5a2 2 0 0 0-1.3.5L8 11.6l1.3-1.8A2 2 0 0 0 8 9.3Z"/></svg>
+          <svg viewBox="0 0 27 12"><rect x=".5" y=".5" width="23" height="11" rx="3.2" fill="none" stroke="#fff" stroke-opacity=".5"/><rect x="2" y="2" width="20" height="8" rx="2"/><path d="M25 4v4c.8-.3 1.3-1.1 1.3-2S25.8 4.3 25 4Z" fill-opacity=".5"/></svg>
+        </span>
+      </div>
+      <div class="island"></div>
+      <div class="homebar"></div>
+    </div>
+  </div>
+
+  <aside class="panel">
+    <div>
+      <h1>Moment Shuffle</h1>
+      <p>A working prototype of the home screen shuffle. Pick a moment type at random, then reveal the prompt.</p>
+    </div>
+
+    <div class="group">
+      <span class="label">Shuffle style</span>
+      <div class="seg" id="styleSeg" role="group" aria-label="Shuffle style">
+        <button type="button" data-style="vortex" aria-pressed="true">Vortex</button>
+        <button type="button" data-style="roulette" aria-pressed="false">Roulette</button>
+        <button type="button" data-style="pinball" aria-pressed="false">Pinball</button>
+      </div>
+      <div class="seg-note" id="styleNote"></div>
+    </div>
+
+    <div class="group">
+      <span class="label">Tuning</span>
+      <label class="row" for="speed">Speed <input id="speed" type="range" min="0.5" max="2" step="0.1" value="1"><span class="speed-val" id="speedVal">1.0×</span></label>
+      <div class="row"><label for="sound">Sound and haptics</label><span class="switch"><input id="sound" type="checkbox" checked><span></span></span></div>
+      <label class="row" for="rig">Result <select id="rig">
+        <option value="random">Random</option>
+        <option value="0">Video</option>
+        <option value="1">Doodle</option>
+        <option value="2">Photo</option>
+        <option value="3">Voice memo</option>
+        <option value="4">Note</option>
+      </select></label>
+    </div>
+
+    <div class="group">
+      <span class="label">Things to try</span>
+      <ul class="tips">
+        <li>Tap Shuffle.</li>
+        <li>Press and hold Shuffle to wind it up, then let go for a harder spin.</li>
+        <li>Drag or fling a blob. It drifts back home.</li>
+        <li>Move your cursor near the blobs. They shy away.</li>
+        <li>Tap a blob to pick that moment yourself.</li>
+        <li>Hit Skip → mid-shuffle to jump to the result.</li>
+      </ul>
+    </div>
+  </aside>
+</div>
+
+<script>
+(() => {
+  const TYPES = [
+    { id: 'video', color: '#E2642E', home: [.57, .2], title: 'film a moment', cta: 'Start filming', meta: 'up to 10 seconds',
+      prompts: ['Ten seconds of whatever is in front of you.', 'Pan slowly across the room you’re in.', 'Film your hands doing something.'],
+      icon: '<rect x="2.5" y="6.5" width="13" height="11" rx="2"/><path d="M15.5 10.5 21.5 7v10l-6-3.5"/>' },
+    { id: 'doodle', color: '#BCD3DC', home: [.07, .335], title: 'draw a doodle', cta: 'Pick up the pen', meta: 'one canvas, no undo',
+      prompts: ['Sketch the last thing that made you smile.', 'Draw the view out the nearest window.', 'Doodle what you had for lunch.'],
+      icon: '<path d="M4 20l1.2-4.2L16.6 4.4a2 2 0 0 1 2.9 0l.1.1a2 2 0 0 1 0 2.9L8.2 18.8 4 20Z"/><path d="m14.5 6.5 3 3"/>' },
+    { id: 'photo', color: '#D257B4', home: [.96, .41], title: 'snap a photo', cta: 'Open camera', meta: 'one shot, no retakes',
+      prompts: ['Whatever caught your eye in the last minute.', 'Something blue, close by.', 'The light where you are right now.'],
+      icon: '<path d="M3 8.5h3.8L8.6 6h6.8l1.8 2.5H21V19H3Z"/><circle cx="12" cy="13.2" r="3.4"/>' },
+    { id: 'voice', color: '#1A86A6', home: [.2, .735], title: 'record a voice memo', cta: 'Start recording', meta: 'up to 30 seconds',
+      prompts: ['The sound of where you are. Or just say hi.', 'Tell someone about your morning.', 'Hum the song stuck in your head.'],
+      icon: '<path d="M3 10.5v3M6 8v8M9 5v14M12 9v6M15 6.5v11M18 9.5v5M21 11v2"/>' },
+    { id: 'note', color: '#E5D24A', home: [.93, .8], title: 'write a note', cta: 'Start writing', meta: 'one or two sentences',
+      prompts: ['One sentence about right now.', 'Something you overheard today.', 'What you’d tell yourself a year ago.'],
+      icon: '<path d="M4 7h16M4 12h16M10 17h10"/>' },
+  ];
+  const STYLE_NOTES = {
+    vortex: 'The blobs get pulled into a spinning whirlpool, then spin back out. One stays lit.',
+    roulette: 'The blobs form a ring and a light hops between them, slowing down until it stops on one.',
+    pinball: 'The blobs bounce off the walls and each other. Whichever ends up closest to the middle wins.',
+  };
+
+  const $ = (s) => document.querySelector(s);
+  const screen = $('#screen'), layer = $('#blobs'), btn = $('#shuffleBtn');
+  const line1 = $('#line1'), line2 = $('#line2'), reveal = $('#reveal'), toast = $('#toast');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const cfg = { style: reduced ? 'roulette' : 'vortex', speed: 1, sound: true, rig: 'random' };
+  let W = 0, H = 0, SIZE = 0;
+
+  const blobs = TYPES.map((type, i) => {
+    const el = document.createElement('div');
+    el.className = 'blob';
+    el.style.setProperty('--c', type.color);
+    el.innerHTML = `<div class="glow"></div><svg viewBox="0 0 24 24">${type.icon}</svg><div class="hit" aria-label="${type.id}"></div>`;
+    layer.appendChild(el);
+    return { i, type, el, x: 0, y: 0, vx: 0, vy: 0, s: 1, o: 1, blur: 14, io: 1, ph: Math.random() * 6.28, ang: 0, r0: 0 };
+  });
+
+  function measure() {
+    const r = screen.getBoundingClientRect();
+    const first = W === 0;
+    W = r.width; H = r.height;
+    SIZE = Math.max(140, W * 0.5);
+    blobs.forEach((b) => {
+      b.el.style.width = b.el.style.height = SIZE + 'px';
+      if (first) { b.x = b.type.home[0] * W; b.y = b.type.home[1] * H; }
+    });
+  }
+  const cx = () => W / 2, cy = () => H * 0.47;
+
+  // ---------- sound + haptics ----------
+  let ac = null, whoosh = null;
+  function audio() {
+    if (!cfg.sound) return null;
+    try {
+      if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+      if (ac.state === 'suspended') ac.resume();
+    } catch (e) { return null; }
+    return ac;
+  }
+  function tick(freq = 1200, vol = 0.06) {
+    const a = audio(); if (!a) return;
+    const o = a.createOscillator(), g = a.createGain(), t0 = a.currentTime;
+    o.type = 'triangle'; o.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.07);
+    o.connect(g).connect(a.destination); o.start(t0); o.stop(t0 + 0.08);
+  }
+  function chime() {
+    const a = audio(); if (!a) return;
+    [523.25, 783.99, 1046.5].forEach((f, k) => {
+      const o = a.createOscillator(), g = a.createGain(), t0 = a.currentTime + k * 0.09;
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.09, t0 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
+      o.connect(g).connect(a.destination); o.start(t0); o.stop(t0 + 1);
+    });
+  }
+  function startWhoosh() {
+    const a = audio(); if (!a || whoosh) return;
+    const buf = a.createBuffer(1, a.sampleRate * 2, a.sampleRate), d = buf.getChannelData(0);
+    for (let k = 0; k < d.length; k++) d[k] = Math.random() * 2 - 1;
+    const src = a.createBufferSource(); src.buffer = buf; src.loop = true;
+    const f = a.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.4; f.frequency.value = 300;
+    const g = a.createGain(); g.gain.value = 0;
+    src.connect(f).connect(g).connect(a.destination); src.start();
+    whoosh = { src, f, g };
+  }
+  function setWhoosh(level) {
+    if (!whoosh || !ac) return;
+    whoosh.g.gain.setTargetAtTime(level * 0.12, ac.currentTime, 0.05);
+    whoosh.f.frequency.setTargetAtTime(250 + level * 900, ac.currentTime, 0.05);
+  }
+  function stopWhoosh() {
+    if (!whoosh) return;
+    const w = whoosh; whoosh = null;
+    try { w.g.gain.setTargetAtTime(0, ac.currentTime, 0.08); setTimeout(() => w.src.stop(), 400); } catch (e) {}
+  }
+  function buzz(p) { if (!cfg.sound) return; try { navigator.vibrate && navigator.vibrate(p); } catch (e) {} }
+
+  // ---------- state ----------
+  let mode = 'idle', modeT = 0, charge = 0, intensity = 1, winner = 0, lastWinner = -1, styleNow = cfg.style;
+  let spin = 0, rl = null, bloomed = false, lastWallTick = 0;
+  const pointer = { x: 0, y: 0, active: false };
+  let drag = null;
+
+  function setUI(state) {
+    screen.dataset.state = state;
+    line1.classList.toggle('off', !(state === 'idle' || state === 'charging'));
+    line2.classList.toggle('off', state !== 'shuffle');
+    btn.textContent = state === 'charging' && charge > 0.12 ? 'let go…' : 'Shuffle';
+  }
+
+  function pickWinner() {
+    if (cfg.rig !== 'random') return +cfg.rig;
+    let w;
+    do { w = Math.floor(Math.random() * TYPES.length); } while (w === lastWinner);
+    return w;
+  }
+
+  function startShuffle(power = 1) {
+    audio();
+    reveal.classList.remove('open'); reveal.setAttribute('aria-hidden', 'true');
+    mode = 'shuffle'; modeT = 0; intensity = power; styleNow = cfg.style; spin = 0;
+    winner = pickWinner();
+    charge = 0; btn.style.setProperty('--charge', 0);
+    setUI('shuffle');
+    buzz(15);
+    if (styleNow === 'vortex') {
+      blobs.forEach((b) => { b.ang = Math.atan2(b.y - cy(), b.x - cx()); b.r0 = Math.hypot(b.x - cx(), b.y - cy()); });
+      startWhoosh();
+    } else if (styleNow === 'roulette') {
+      const s = Math.floor(Math.random() * 5), base = Math.round(13 + 4 * power);
+      const N = base + ((((winner - (s + base)) % 5) + 5) % 5);
+      const hops = []; let tt = 0.55;
+      for (let k = 1; k <= N; k++) { tt += 0.045 + 0.4 * Math.pow(k / N, 3); hops.push(tt); }
+      rl = { s, hops, idx: 0, cur: s };
+    } else {
+      const scale = W / 390;
+      blobs.forEach((b) => {
+        const a = Math.random() * Math.PI * 2, v = (1000 + Math.random() * 500) * power * scale;
+        b.vx = Math.cos(a) * v; b.vy = Math.sin(a) * v;
+        if (b.o < 0.3) { b.x = cx() + (Math.random() - .5) * 40; b.y = cy() + (Math.random() - .5) * 40; }
+      });
+    }
+  }
+
+  function enterLand(w) {
+    mode = 'land'; modeT = 0; winner = w; lastWinner = w; bloomed = false;
+    stopWhoosh(); setUI('land');
+    blobs.forEach((b) => { b.vx *= 0.3; b.vy *= 0.3; });
+  }
+
+  function bloom() {
+    bloomed = true;
+    const w = blobs[winner], t = w.type;
+    reveal.style.setProperty('--ox', w.x + 'px');
+    reveal.style.setProperty('--oy', w.y + 'px');
+    reveal.style.setProperty('--rc', t.color);
+    $('#rvIcon').innerHTML = `<svg viewBox="0 0 24 24">${t.icon}</svg>`;
+    $('#rvTitle').textContent = t.title;
+    $('#rvPrompt').textContent = t.prompts[Math.floor(Math.random() * t.prompts.length)];
+    $('#rvMeta').textContent = t.meta;
+    $('#rvGo').textContent = t.cta;
+    reveal.setAttribute('aria-hidden', 'false');
+    requestAnimationFrame(() => reveal.classList.add('open'));
+    chime(); buzz([10, 50, 25]);
+  }
+
+  function goHome() {
+    const w = blobs[winner];
+    reveal.style.setProperty('--ox', w.x + 'px');
+    reveal.style.setProperty('--oy', w.y + 'px');
+    reveal.classList.remove('open'); reveal.setAttribute('aria-hidden', 'true');
+    mode = 'idle'; setUI('idle');
+  }
+
+  function skip() {
+    if (mode !== 'shuffle') return;
+    if (styleNow === 'pinball' && cfg.rig === 'random') winner = closestToCenter();
+    enterLand(winner);
+  }
+
+  function closestToCenter() {
+    let best = 0, bd = Infinity;
+    blobs.forEach((b) => { const d = Math.hypot(b.x - cx(), b.y - cy()); if (d < bd) { bd = d; best = b.i; } });
+    return best;
+  }
+
+  // ---------- physics helpers ----------
+  function spring(b, tx, ty, k, dt) {
+    const c = 2 * Math.sqrt(k) * 0.72;
+    for (let n = 0; n < 2; n++) {
+      const h = dt / 2;
+      b.vx += (k * (tx - b.x) - c * b.vx) * h;
+      b.vy += (k * (ty - b.y) - c * b.vy) * h;
+      b.x += b.vx * h; b.y += b.vy * h;
+    }
+  }
+  function ease(b, ts, to, blur, io, dt, rate = 7) {
+    const f = 1 - Math.exp(-dt * rate);
+    b.s += (ts - b.s) * f; b.o += (to - b.o) * f; b.blur += (blur - b.blur) * f; b.io += (io - b.io) * f;
+  }
+  const clamp = (v, a, z) => Math.max(a, Math.min(z, v));
+  const lerp = (a, z, t) => a + (z - a) * t;
+  const easeInOut = (t) => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+
+  // ---------- modes ----------
+  let clock = 0;
+  function updateIdle(dt) {
+    if (mode === 'charging') {
+      charge = Math.min(1, charge + dt / 1.1);
+      btn.style.setProperty('--charge', charge.toFixed(3));
+      if (charge > 0.12 && btn.textContent !== 'let go…') btn.textContent = 'let go…';
+      if (Math.random() < charge * 0.15) tick(300 + charge * 500, 0.02);
+    }
+    blobs.forEach((b) => {
+      if (drag && drag.b === b) { ease(b, 1.08, 1, 14, 1, dt); return; }
+      let hx = b.type.home[0] * W, hy = b.type.home[1] * H;
+      if (!reduced) {
+        hx += Math.sin(clock * 0.35 + b.ph) * W * 0.035;
+        hy += Math.cos(clock * 0.27 + b.ph * 1.3) * H * 0.018;
+      }
+      if (mode === 'charging') {
+        hx += (cx() - hx) * charge * 0.42 + (Math.random() - .5) * charge * 14;
+        hy += (cy() - hy) * charge * 0.42 + (Math.random() - .5) * charge * 14;
+      }
+      if (pointer.active && !drag) {
+        const dx = b.x - pointer.x, dy = b.y - pointer.y, d = Math.hypot(dx, dy) || 1, R = W * 0.42;
+        if (d < R) { const p = Math.pow(1 - d / R, 2) * W * 0.2; hx += dx / d * p; hy += dy / d * p; }
+      }
+      spring(b, hx, hy, 26, dt);
+      ease(b, 1 - charge * 0.12, 1, 14 + charge * 6, 1, dt, 4);
+    });
+  }
+
+  function updateVortex(dt, sdt) {
+    const T = modeT, I = intensity, top = 8 * I;
+    const w = T < 0.8 ? lerp(0, top, easeInOut(T / 0.8)) : T < 1.5 ? top : lerp(top, 0.4, easeOut(clamp((T - 1.5) / 1.1, 0, 1)));
+    spin += w * sdt;
+    setWhoosh(w / 16);
+    const inner = W * 0.12, outer = W * 0.3;
+    blobs.forEach((b, i) => {
+      const slot = -Math.PI / 2 + i * Math.PI * 2 / 5;
+      let delta = slot - b.ang; delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+      const e = easeInOut(clamp(T / 0.8, 0, 1));
+      const r = T < 0.8 ? lerp(b.r0, inner, e) : T < 1.5 ? inner + Math.sin(T * 14 + i) * 5 : lerp(inner, outer, easeOut(clamp((T - 1.5) / 1.1, 0, 1)));
+      const a = b.ang + delta * e + spin;
+      spring(b, cx() + Math.cos(a) * r, cy() + Math.sin(a) * r, 240, dt);
+      const lit = b.i === winner && T > 1.9;
+      ease(b, lit ? 0.9 : 0.62, lit ? 1 : 0.55, 22, 0, dt);
+    });
+    if (T >= 2.7) enterLand(winner);
+  }
+
+  function updateRoulette(dt) {
+    const T = modeT, R = W * 0.3;
+    while (rl.idx < rl.hops.length && T >= rl.hops[rl.idx]) {
+      rl.idx++; rl.cur = (rl.s + rl.idx) % 5;
+      tick(rl.idx === rl.hops.length ? 1600 : 1100, 0.06); buzz(6);
+    }
+    const rot = T * 0.35;
+    blobs.forEach((b, i) => {
+      const a = -Math.PI / 2 + i * Math.PI * 2 / 5 + rot;
+      spring(b, cx() + Math.cos(a) * R, cy() + Math.sin(a) * R, 70, dt);
+      const on = T > 0.55 && rl.cur === b.i;
+      ease(b, on ? 0.95 : 0.62, on ? 1 : (T > 0.55 ? 0.35 : 0.55), on ? 14 : 22, on ? 0.9 : 0, dt, on ? 30 : 9);
+    });
+    if (rl.idx >= rl.hops.length && T > rl.hops[rl.hops.length - 1] + 0.5) enterLand(winner);
+  }
+
+  function updatePinball(dt, sdt) {
+    const T = modeT, rad = SIZE * 0.2, minD = SIZE * 0.34;
+    const fr = Math.exp(-0.95 * sdt);
+    let maxV = 0;
+    blobs.forEach((b) => {
+      b.vx *= fr; b.vy *= fr;
+      b.x += b.vx * sdt; b.y += b.vy * sdt;
+      let hit = false;
+      if (b.x < rad) { b.x = rad; b.vx = Math.abs(b.vx) * 0.9; hit = true; }
+      if (b.x > W - rad) { b.x = W - rad; b.vx = -Math.abs(b.vx) * 0.9; hit = true; }
+      if (b.y < rad + H * 0.06) { b.y = rad + H * 0.06; b.vy = Math.abs(b.vy) * 0.9; hit = true; }
+      if (b.y > H - rad - H * 0.06) { b.y = H - rad - H * 0.06; b.vy = -Math.abs(b.vy) * 0.9; hit = true; }
+      const v = Math.hypot(b.vx, b.vy); maxV = Math.max(maxV, v);
+      if (hit && v > 120 && clock - lastWallTick > 0.04) { lastWallTick = clock; tick(500 + Math.min(v, 1500) * 0.5, Math.min(0.08, v / 15000)); buzz(5); }
+      ease(b, 0.7, 0.75, 18, 0, dt);
+    });
+    for (let a = 0; a < 5; a++) for (let c = a + 1; c < 5; c++) {
+      const A = blobs[a], B = blobs[c], dx = B.x - A.x, dy = B.y - A.y, d = Math.hypot(dx, dy) || 1;
+      if (d < minD) {
+        const nx = dx / d, ny = dy / d, push = (minD - d) / 2;
+        A.x -= nx * push; A.y -= ny * push; B.x += nx * push; B.y += ny * push;
+        const rel = (B.vx - A.vx) * nx + (B.vy - A.vy) * ny;
+        if (rel < 0) { A.vx += rel * nx; A.vy += rel * ny; B.vx -= rel * nx; B.vy -= rel * ny; }
+      }
+    }
+    if ((T > 1.2 && maxV < 50 * W / 390) || T > 4.5) enterLand(cfg.rig === 'random' ? closestToCenter() : winner);
+  }
+
+  function updateLand(dt) {
+    const T = modeT;
+    blobs.forEach((b) => {
+      if (b.i === winner) {
+        spring(b, cx(), H * 0.44, 90, dt);
+        ease(b, 1.6, 1, 14, 1, dt, 6);
+      } else {
+        const dx = b.x - cx(), dy = b.y - cy(), d = Math.hypot(dx, dy) || 1;
+        spring(b, cx() + dx / d * W * 0.95, cy() + dy / d * W * 0.95, 30, dt);
+        ease(b, 0.5, 0, 24, 0, dt, 5);
+      }
+    });
+    if (!bloomed && T > 0.7) bloom();
+    if (T > 1.4) mode = 'reveal';
+  }
+
+  function render() {
+    blobs.forEach((b) => {
+      b.el.style.transform = `translate3d(${(b.x - SIZE / 2).toFixed(1)}px, ${(b.y - SIZE / 2).toFixed(1)}px, 0) scale(${b.s.toFixed(3)})`;
+      b.el.style.opacity = b.o.toFixed(3);
+      b.el.style.setProperty('--blur', b.blur.toFixed(1));
+      b.el.style.setProperty('--io', b.io.toFixed(2));
+    });
+  }
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.033, (now - last) / 1000); last = now;
+    const sdt = dt * cfg.speed;
+    clock += dt;
+    if (mode === 'idle' || mode === 'charging') updateIdle(dt);
+    else if (mode === 'shuffle') {
+      modeT += sdt;
+      if (styleNow === 'vortex') updateVortex(dt * cfg.speed, sdt);
+      else if (styleNow === 'roulette') updateRoulette(dt * cfg.speed);
+      else updatePinball(dt, sdt);
+    } else if (mode === 'land') { modeT += sdt; updateLand(dt * Math.max(1, cfg.speed)); }
+    if (mode !== 'reveal') render();
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- input ----------
+  function local(e) { const r = screen.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+
+  screen.addEventListener('pointermove', (e) => { const p = local(e); pointer.x = p.x; pointer.y = p.y; pointer.active = e.pointerType === 'mouse' || !!drag; });
+  screen.addEventListener('pointerleave', () => { pointer.active = false; });
+
+  blobs.forEach((b) => {
+    b.el.querySelector('.hit').addEventListener('pointerdown', (e) => {
+      if (mode !== 'idle') return;
+      e.preventDefault();
+      const p = local(e);
+      drag = { b, ox: p.x - b.x, oy: p.y - b.y, sx: p.x, sy: p.y, st: performance.now(), lx: p.x, ly: p.y, lt: performance.now(), vx: 0, vy: 0, moved: false };
+      b.vx = b.vy = 0;
+      e.target.setPointerCapture(e.pointerId);
+      tick(700, 0.03);
+    });
+    b.el.querySelector('.hit').addEventListener('pointermove', (e) => {
+      if (!drag || drag.b !== b) return;
+      const p = local(e), now = performance.now(), dtp = Math.max(1, now - drag.lt) / 1000;
+      drag.vx = drag.vx * 0.6 + ((p.x - drag.lx) / dtp) * 0.4;
+      drag.vy = drag.vy * 0.6 + ((p.y - drag.ly) / dtp) * 0.4;
+      drag.lx = p.x; drag.ly = p.y; drag.lt = now;
+      if (Math.hypot(p.x - drag.sx, p.y - drag.sy) > 6) drag.moved = true;
+      b.x = p.x - drag.ox; b.y = p.y - drag.oy;
+    });
+    const end = (e) => {
+      if (!drag || drag.b !== b) return;
+      const tap = !drag.moved && performance.now() - drag.st < 350;
+      b.vx = clamp(drag.vx, -3000, 3000); b.vy = clamp(drag.vy, -3000, 3000);
+      drag = null;
+      if (tap && e.type === 'pointerup') { audio(); buzz(12); enterLand(b.i); }
+    };
+    b.el.querySelector('.hit').addEventListener('pointerup', end);
+    b.el.querySelector('.hit').addEventListener('pointercancel', end);
+  });
+
+  btn.addEventListener('pointerdown', (e) => {
+    if (mode !== 'idle') return;
+    audio();
+    mode = 'charging'; charge = 0; setUI('charging');
+    btn.setPointerCapture(e.pointerId);
+  });
+  btn.addEventListener('pointerup', () => { if (mode === 'charging') startShuffle(1 + charge); });
+  btn.addEventListener('pointercancel', () => { if (mode === 'charging') { mode = 'idle'; charge = 0; btn.style.setProperty('--charge', 0); setUI('idle'); } });
+  btn.addEventListener('click', (e) => { if (e.detail === 0 && mode === 'idle') startShuffle(1); });
+
+  $('#skipBtn').addEventListener('click', skip);
+  $('#rvClose').addEventListener('click', goHome);
+  $('#rvAgain').addEventListener('click', () => startShuffle(1));
+  let toastTimer;
+  $('#rvGo').addEventListener('click', () => {
+    toast.textContent = `The ${TYPES[winner].id === 'note' ? 'note editor' : TYPES[winner].id === 'doodle' ? 'doodle canvas' : TYPES[winner].id === 'voice' ? 'recorder' : 'camera'} comes next`;
+    toast.classList.add('show'); clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+  });
+
+  // ---------- panel ----------
+  const seg = $('#styleSeg'), note = $('#styleNote');
+  function setStyle(s) {
+    cfg.style = s;
+    seg.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.style === s)));
+    note.textContent = STYLE_NOTES[s];
+  }
+  seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setStyle(b.dataset.style); });
+  $('#speed').addEventListener('input', (e) => { cfg.speed = +e.target.value; $('#speedVal').textContent = cfg.speed.toFixed(1) + '×'; });
+  $('#sound').addEventListener('change', (e) => { cfg.sound = e.target.checked; if (!cfg.sound) stopWhoosh(); });
+  $('#rig').addEventListener('change', (e) => { cfg.rig = e.target.value; });
+
+  setStyle(cfg.style);
+  measure();
+  new ResizeObserver(measure).observe(screen);
+  setUI('idle');
+  render();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
